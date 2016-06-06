@@ -8,7 +8,7 @@ import { InsertMode } from './modeInsert';
 import { VisualMode } from './modeVisual';
 import { VisualLineMode } from './modeVisualLine';
 import {
-    BaseMovement, BaseCommand, Actions,
+    BaseMovement, BaseCommand, BaseAction, Actions,
     BaseOperator,
     KeypressState } from './../actions/actions';
 import { Configuration } from '../configuration/configuration';
@@ -27,7 +27,8 @@ export enum VimCommandActions {
     Undo,
     Redo,
     MoveFullPageDown,
-    MoveFullPageUp
+    MoveFullPageUp,
+    Repeat,
 }
 
 /**
@@ -111,6 +112,8 @@ export class ActionState {
 
     private _movement: BaseMovement = undefined;
 
+    private _allKeysPressed: string[] = [];
+
     /**
      * The number of times the user wants to repeat this action.
      */
@@ -150,6 +153,12 @@ export class ActionState {
         this.actionStateChanged();
     }
 
+    public get allKeysPressed(): string[] { return this._allKeysPressed; }
+    public set allKeysPressed(val: string[]) {
+        this._allKeysPressed = val;
+        this.actionStateChanged();
+    }
+
     /**
      * This function is called whenever a property on ActionState is changed.
      * It determines if the state is ready to run - that is, if the user
@@ -180,6 +189,10 @@ export class ActionState {
                this._count       === 1;
     }
 
+    public isBareMovement(): boolean {
+        return this.movement && !this._operator && !this._command;
+    }
+
     constructor(vimState: VimState) {
         this.vimState = vimState;
     }
@@ -190,6 +203,13 @@ export class ModeHandler implements vscode.Disposable {
     private _statusBarItem: vscode.StatusBarItem;
     private _configuration: Configuration;
     private _vimState: VimState;
+
+    /**
+     * Retained for the dot operator.
+     *
+     * Someday, we'll use an extension of this to do macros. SOMEDAY.
+     */
+    private _previousActionState: ActionState = null;
 
     // Caret Styling
     private _caretDecoration = vscode.window.createTextEditorDecorationType(
@@ -266,19 +286,25 @@ export class ModeHandler implements vscode.Disposable {
         let actionState = this._vimState.actionState;
 
         actionState.keysPressed.push(key);
+        actionState.allKeysPressed.push(key);
 
-        let action = Actions.getRelevantAction(actionState.keysPressed, this._vimState);
+        if (this._vimState && this._vimState.actionState) {
+            console.log(this._vimState.actionState.allKeysPressed.join(""));
+        }
 
-        if (action === KeypressState.NoPossibleMatch) {
+        let actionOrState = Actions.getRelevantAction(actionState.keysPressed, this._vimState);
+
+        if (actionOrState === KeypressState.NoPossibleMatch) {
             if (this.currentModeName === ModeName.Insert) {
                 await (this.currentMode as any).handleAction(actionState);
-                this._vimState.actionState = new ActionState(this._vimState);
 
                 // TODO: Forcing a return here and handling this case is pretty janky when you
                 // could just allow this to pass through the post processing down below anyways.
 
                 this._vimState.cursorStartPosition = Position.FromVSCodePosition(vscode.window.activeTextEditor.selection.start);
                 this._vimState.cursorPosition = Position.FromVSCodePosition(vscode.window.activeTextEditor.selection.start);
+
+                this._vimState.actionState.keysPressed = [];
 
                 return true;
             } else {
@@ -290,9 +316,11 @@ export class ModeHandler implements vscode.Disposable {
                 this._vimState.actionState = new ActionState(this._vimState);
                 return false;
             }
-        } else if (action === KeypressState.WaitingOnKeys) {
+        } else if (actionOrState === KeypressState.WaitingOnKeys) {
             return true;
         }
+
+        let action: BaseAction = actionOrState as BaseAction;
 
         if (action instanceof BaseMovement) {
             actionState.movement = action;
@@ -306,6 +334,10 @@ export class ModeHandler implements vscode.Disposable {
 
         if (!actionState.readyToExecute) {
             return true;
+        }
+
+        if (actionState.isBareMovement()) {
+            this._vimState.actionState.allKeysPressed = [];
         }
 
         if (this.currentMode.name !== ModeName.Visual &&
@@ -415,7 +447,14 @@ export class ModeHandler implements vscode.Disposable {
             }
         }
 
-        this._vimState.actionState = new ActionState(this._vimState);
+        if (action.clearsActionState && this._vimState.actionState.operator) {
+            this._previousActionState = this._vimState.actionState;
+            this._vimState.actionState = new ActionState(this._vimState);
+
+            console.log("action done, key sequence is", this._previousActionState.allKeysPressed.join(""));
+        } else {
+            this._vimState.actionState.keysPressed = [];
+        }
 
         return !!action;
     }
@@ -423,25 +462,25 @@ export class ModeHandler implements vscode.Disposable {
     private async executeState(): Promise<VimState> {
         let start = this._vimState.cursorStartPosition;
         let stop = this._vimState.cursorPosition;
-        let actionState = this._vimState.actionState;
+        let state = this._vimState.actionState;
         let newState: VimState;
 
-        if (actionState.command) {
-            return await actionState.command.exec(stop, this._vimState);
+        if (state.command) {
+            return await state.command.exec(stop, this._vimState);
         }
 
-        if (actionState.movement) {
-            newState = actionState.operator ?
-                await actionState.movement.execActionForOperator(stop, this._vimState) :
-                await actionState.movement.execAction           (stop, this._vimState);
+        if (state.movement) {
+            newState = state.operator ?
+                await state.movement.execActionForOperator(stop, this._vimState) :
+                await state.movement.execAction           (stop, this._vimState);
 
-            actionState = newState.actionState;
+            state = newState.actionState;
             start       = newState.cursorStartPosition;
             stop        = newState.cursorPosition;
         }
 
-        if (actionState.operator) {
-            if (actionState.movement) {
+        if (state.operator) {
+            if (state.movement) {
                 if (Position.EarlierOf(start, stop) === start) {
                     stop = stop.getLeft();
                 } else {
@@ -454,7 +493,7 @@ export class ModeHandler implements vscode.Disposable {
                 stop  = Position.LaterOf(start, stop).getLineEnd();
             }
 
-            return await actionState.operator.run(this._vimState, start, stop);
+            return await state.operator.run(this._vimState, start, stop);
         } else {
             return newState;
         }

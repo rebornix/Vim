@@ -5,7 +5,6 @@ import { Register, RegisterMode } from './../register/register';
 import { Position } from './../motion/position';
 import * as vscode from 'vscode';
 
-
 const compareKeypressSequence = function (one: string[], two: string[]): boolean {
   if (one.length !== two.length) {
     return false;
@@ -30,6 +29,8 @@ export class BaseAction {
    */
   public keys: string[];
 
+  public clearsActionState = false;
+
   /**
    * Is this action valid in the current Vim state?
    */
@@ -38,7 +39,9 @@ export class BaseAction {
     if (!compareKeypressSequence(this.keys, keysPressed)) { return false; }
     // TODO - this is not exactly correct and will eventually make me rage
     // It's for cases like daw where a would otherwise by treated as append and insert.
-    if (this instanceof BaseCommand && !vimState.actionState.isInInitialState) { return false; }
+    if (this instanceof BaseCommand &&
+        !compareKeypressSequence(this.keys, ["<esc>"]) &&
+        !vimState.actionState.isInInitialState) { return false; }
     if (this instanceof BaseOperator && vimState.actionState.operator) { return false; }
 
     return true;
@@ -50,7 +53,9 @@ export class BaseAction {
   public couldActionApply(vimState: VimState, keysPressed: string[]): boolean {
     if (this.modes.indexOf(vimState.currentMode) === -1) { return false; }
     if (!compareKeypressSequence(this.keys.slice(0, keysPressed.length), keysPressed)) { return false; }
-    if (this instanceof BaseCommand && !vimState.actionState.isInInitialState) { return false; }
+    if (this instanceof BaseCommand &&
+        !compareKeypressSequence(this.keys, ["<esc>"]) &&
+        !vimState.actionState.isInInitialState) { return false; }
     if (this instanceof BaseOperator && vimState.actionState.operator) { return false; }
 
     return true;
@@ -102,6 +107,8 @@ export class BaseOperator extends BaseAction {
      * Run this operator on a range, returning the new location of the cursor.
      */
     run(vimState: VimState, start: Position, stop: Position): Promise<VimState> { return; }
+
+    public clearsActionState = false;
 }
 
 export enum KeypressState {
@@ -256,6 +263,7 @@ export class DeleteOperatorXVisual extends BaseOperator {
 export class ChangeOperator extends BaseOperator {
     public keys = ["c"];
     public modes = [ModeName.Normal, ModeName.Visual, ModeName.VisualLine];
+    public clearsActionState = false;
 
     public async run(vimState: VimState, start: Position, end: Position): Promise<VimState> {
         const state = await new DeleteOperator().run(vimState, start, end);
@@ -312,6 +320,19 @@ class CommandShowCommandLine extends BaseCommand {
     return vimState;
   }
 }
+
+@RegisterAction
+class CommandRepeat extends BaseCommand {
+  modes = [ModeName.Normal];
+  keys = ["."];
+
+  public async exec(position: Position, vimState: VimState): Promise<VimState> {
+    vimState.commandAction = VimCommandActions.Repeat;
+
+    return vimState;
+  }
+}
+
 
 @RegisterAction
 class CommandFind extends BaseCommand {
@@ -453,6 +474,7 @@ class CommandDeleteToLineEnd extends BaseCommand {
 class CommandChangeToLineEnd extends BaseCommand {
   modes = [ModeName.Normal];
   keys = ["C"];
+  clearsActionState = false;
 
   public async exec(position: Position, vimState: VimState): Promise<VimState> {
     const state = await new DeleteOperator().run(vimState, position, position.getLineEnd());
@@ -528,6 +550,7 @@ class CommandOpenSquareBracket extends BaseCommand {
 class CommandInsertAtCursor extends BaseCommand {
   modes = [ModeName.Normal];
   keys = ["i"];
+  clearsActionState = false;
 
   public async exec(position: Position, vimState: VimState): Promise<VimState> {
     vimState.currentMode = ModeName.Insert;
@@ -540,6 +563,7 @@ class CommandInsertAtCursor extends BaseCommand {
 class CommandInsertAtLineBegin extends BaseCommand {
   modes = [ModeName.Normal];
   keys = ["I"];
+  clearsActionState = false;
 
   public async exec(position: Position, vimState: VimState): Promise<VimState> {
     vimState.currentMode = ModeName.Insert;
@@ -553,6 +577,7 @@ class CommandInsertAtLineBegin extends BaseCommand {
 class CommandInsertAfterCursor extends BaseCommand {
   modes = [ModeName.Normal];
   keys = ["a"];
+  clearsActionState = false;
 
   public async exec(position: Position, vimState: VimState): Promise<VimState> {
     vimState.currentMode = ModeName.Insert;
@@ -566,6 +591,7 @@ class CommandInsertAfterCursor extends BaseCommand {
 class CommandInsertAtLineEnd extends BaseCommand {
   modes = [ModeName.Normal];
   keys = ["A"];
+  clearsActionState = false;
 
   public async exec(position: Position, vimState: VimState): Promise<VimState> {
     const pos = new Position(position.line,
@@ -582,6 +608,7 @@ class CommandInsertAtLineEnd extends BaseCommand {
 class CommandInsertNewLineAbove extends BaseCommand {
   modes = [ModeName.Normal];
   keys = ["O"];
+  clearsActionState = false;
 
   public async exec(position: Position, vimState: VimState): Promise<VimState> {
     await vscode.commands.executeCommand("editor.action.insertLineBefore");
@@ -596,6 +623,7 @@ class CommandInsertNewLineAbove extends BaseCommand {
 class CommandInsertNewLineBefore extends BaseCommand {
   modes = [ModeName.Normal];
   keys = ["o"];
+  clearsActionState = false;
 
   public async exec(position: Position, vimState: VimState): Promise<VimState> {
     await vscode.commands.executeCommand("editor.action.insertLineAfter");
@@ -1017,6 +1045,7 @@ class ActionDeleteLineVisualMode extends BaseCommand {
 class ActionChangeChar extends BaseCommand {
   modes = [ModeName.Normal];
   keys = ["s"];
+  clearsActionState = false;
 
   public async exec(position: Position, vimState: VimState): Promise<VimState> {
     const state = await new ChangeOperator().run(vimState, position, position);

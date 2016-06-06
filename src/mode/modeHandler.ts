@@ -294,128 +294,128 @@ export class ModeHandler implements vscode.Disposable {
             return true;
         }
 
-        if (action) {
-            if (action instanceof BaseMovement) {
-                actionState.movement = action;
-            } else if (action instanceof BaseOperator) {
-                actionState.operator = action;
-            } else if (action instanceof BaseCommand) {
-                actionState.command = action;
+        if (action instanceof BaseMovement) {
+            actionState.movement = action;
+        } else if (action instanceof BaseOperator) {
+            actionState.operator = action;
+
+            actionState.keysPressed = [];
+        } else if (action instanceof BaseCommand) {
+            actionState.command = action;
+        }
+
+        if (!actionState.readyToExecute) {
+            return true;
+        }
+
+        if (this.currentMode.name !== ModeName.Visual &&
+            this.currentMode.name !== ModeName.VisualLine) {
+            this._vimState.cursorStartPosition = this._vimState.cursorPosition;
+        }
+
+        this._vimState = await this.executeState();
+
+        if (this._vimState.commandAction !== VimCommandActions.DoNothing) {
+            switch (this._vimState.commandAction) {
+                case VimCommandActions.ShowCommandLine: await showCmdLine("", this); break;
+                case VimCommandActions.Find: await vscode.commands.executeCommand("actions.find"); break;
+                case VimCommandActions.Fold: await vscode.commands.executeCommand("editor.fold"); break;
+                case VimCommandActions.Unfold: await vscode.commands.executeCommand("editor.unfold"); break;
+                case VimCommandActions.FoldAll: await vscode.commands.executeCommand("editor.foldAll"); break;
+                case VimCommandActions.UnfoldAll: await vscode.commands.executeCommand("editor.unfoldAll"); break;
+                case VimCommandActions.Undo: await vscode.commands.executeCommand("undo"); break;
+                case VimCommandActions.Redo: await vscode.commands.executeCommand("redo"); break;
+                case VimCommandActions.MoveFullPageDown: await vscode.commands.executeCommand("cursorPageUp"); break;
+                case VimCommandActions.MoveFullPageUp: await vscode.commands.executeCommand("cursorPageDown"); break;
+            }
+
+            this._vimState.commandAction = VimCommandActions.DoNothing;
+        }
+
+        // Update mode
+
+        if (this._vimState.currentMode !== this.currentModeName) {
+            this.setCurrentModeByName(this._vimState.currentMode);
+        }
+
+        // Update cursor position
+
+        let start = this._vimState.cursorStartPosition;
+        let stop = this._vimState.cursorPosition;
+
+        // Keep the cursor within bounds
+
+        if (this.currentMode.name === ModeName.Normal) {
+            if (stop.character >= Position.getLineLength(stop.line)) {
+                stop = stop.getLineEnd().getLeft();
+                this._vimState.cursorPosition = stop;
+            }
+        } else if (this.currentMode.name === ModeName.Visual ||
+                    this.currentMode.name === ModeName.VisualLine) {
+
+            // Vim does this weird thing where it allows you to select and delete
+            // the newline character, which it places 1 past the last character
+            // in the line. This is why we use > instead of >=.
+
+            if (stop.character > Position.getLineLength(stop.line)) {
+                stop = stop.getLineEnd();
+                this._vimState.cursorPosition = stop;
+            }
+
+            /**
+             * Always select the letter that we started visual mode on, no matter
+             * if we are in front or behind it. Imagine that we started visual mode
+             * with some text like this:
+             *
+             *   abc|def
+             *
+             * (The | represents the cursor.) If we now press w, we'll select def,
+             * but if we hit b we expect to select abcd, so we need to getRight() on the
+             * start of the selection when it precedes where we started visual mode.
+             */
+
+            // TODO: At this point, start and stop become desynchronoized from cursor(Start)Position
+            // and just become where to draw the selection. This is just begging for bugs.
+
+            if (start.compareTo(stop) > 0) {
+                start = start.getRight();
             }
         }
 
-        if (actionState.readyToExecute) {
-            if (this.currentMode.name !== ModeName.Visual &&
-                this.currentMode.name !== ModeName.VisualLine) {
-                this._vimState.cursorStartPosition = this._vimState.cursorPosition;
-            }
+        // Draw block cursor.
 
-            this._vimState = await this.executeState();
-
-            if (this._vimState.commandAction !== VimCommandActions.DoNothing) {
-                switch (this._vimState.commandAction) {
-                    case VimCommandActions.ShowCommandLine: await showCmdLine("", this); break;
-                    case VimCommandActions.Find: await vscode.commands.executeCommand("actions.find"); break;
-                    case VimCommandActions.Fold: await vscode.commands.executeCommand("editor.fold"); break;
-                    case VimCommandActions.Unfold: await vscode.commands.executeCommand("editor.unfold"); break;
-                    case VimCommandActions.FoldAll: await vscode.commands.executeCommand("editor.foldAll"); break;
-                    case VimCommandActions.UnfoldAll: await vscode.commands.executeCommand("editor.unfoldAll"); break;
-                    case VimCommandActions.Undo: await vscode.commands.executeCommand("undo"); break;
-                    case VimCommandActions.Redo: await vscode.commands.executeCommand("redo"); break;
-                    case VimCommandActions.MoveFullPageDown: await vscode.commands.executeCommand("cursorPageUp"); break;
-                    case VimCommandActions.MoveFullPageUp: await vscode.commands.executeCommand("cursorPageDown"); break;
-                }
-
-                this._vimState.commandAction = VimCommandActions.DoNothing;
-            }
-
-            // Update mode
-
-            if (this._vimState.currentMode !== this.currentModeName) {
-                this.setCurrentModeByName(this._vimState.currentMode);
-            }
-
-            // Update cursor position
-
-            let start = this._vimState.cursorStartPosition;
-            let stop = this._vimState.cursorPosition;
-
-            // Keep the cursor within bounds
-
-            if (this.currentMode.name === ModeName.Normal) {
-                if (stop.character >= Position.getLineLength(stop.line)) {
-                    stop = stop.getLineEnd().getLeft();
-                    this._vimState.cursorPosition = stop;
-                }
-            } else if (this.currentMode.name === ModeName.Visual ||
-                       this.currentMode.name === ModeName.VisualLine) {
-
-                // Vim does this weird thing where it allows you to select and delete
-                // the newline character, which it places 1 past the last character
-                // in the line. This is why we use > instead of >=.
-
-                if (stop.character > Position.getLineLength(stop.line)) {
-                    stop = stop.getLineEnd();
-                    this._vimState.cursorPosition = stop;
-                }
-
-                /**
-                 * Always select the letter that we started visual mode on, no matter
-                 * if we are in front or behind it. Imagine that we started visual mode
-                 * with some text like this:
-                 *
-                 *   abc|def
-                 *
-                 * (The | represents the cursor.) If we now press w, we'll select def,
-                 * but if we hit b we expect to select abcd, so we need to getRight() on the
-                 * start of the selection when it precedes where we started visual mode.
-                 */
-
-                // TODO: At this point, start and stop become desynchronoized from cursor(Start)Position
-                // and just become where to draw the selection. This is just begging for bugs.
-
-                if (start.compareTo(stop) > 0) {
-                    start = start.getRight();
-                }
-            }
-
-            // Draw block cursor.
-
-            if (this.currentMode.name !== ModeName.Insert) {
-                let range = new vscode.Range(stop, stop.getRight());
-                vscode.window.activeTextEditor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
-                vscode.window.activeTextEditor.setDecorations(this._caretDecoration, [range]);
-            } else {
-                vscode.window.activeTextEditor.setDecorations(this._caretDecoration, []);
-            }
-
-            // Draw selection (or cursor)
-
-            if (this.currentMode.name === ModeName.Visual) {
-                vscode.window.activeTextEditor.selection = new vscode.Selection(start, stop);
-            } else if (this.currentMode.name === ModeName.VisualLine) {
-                vscode.window.activeTextEditor.selection = new vscode.Selection(
-                    Position.EarlierOf(start, stop).getLineBegin(),
-                    Position.LaterOf(start, stop).getLineEnd());
-            } else {
-                vscode.window.activeTextEditor.selection = new vscode.Selection(stop, stop);
-            }
-
-            // Updated desired column
-
-            const movement = actionState.movement, command = actionState.command;
-            if ((movement && !movement.doesntChangeDesiredColumn) || command) {
-                if (movement && movement.setsDesiredColumnToEOL) {
-                    this._vimState.desiredColumn = Number.POSITIVE_INFINITY;
-                } else {
-                    this._vimState.desiredColumn = this._vimState.cursorPosition.character;
-                }
-            }
-
-            this._vimState.actionState = new ActionState(this._vimState);
+        if (this.currentMode.name !== ModeName.Insert) {
+            let range = new vscode.Range(stop, stop.getRight());
+            vscode.window.activeTextEditor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+            vscode.window.activeTextEditor.setDecorations(this._caretDecoration, [range]);
+        } else {
+            vscode.window.activeTextEditor.setDecorations(this._caretDecoration, []);
         }
 
-        actionState.keysPressed = [];
+        // Draw selection (or cursor)
+
+        if (this.currentMode.name === ModeName.Visual) {
+            vscode.window.activeTextEditor.selection = new vscode.Selection(start, stop);
+        } else if (this.currentMode.name === ModeName.VisualLine) {
+            vscode.window.activeTextEditor.selection = new vscode.Selection(
+                Position.EarlierOf(start, stop).getLineBegin(),
+                Position.LaterOf(start, stop).getLineEnd());
+        } else {
+            vscode.window.activeTextEditor.selection = new vscode.Selection(stop, stop);
+        }
+
+        // Updated desired column
+
+        const movement = actionState.movement, command = actionState.command;
+        if ((movement && !movement.doesntChangeDesiredColumn) || command) {
+            if (movement && movement.setsDesiredColumnToEOL) {
+                this._vimState.desiredColumn = Number.POSITIVE_INFINITY;
+            } else {
+                this._vimState.desiredColumn = this._vimState.cursorPosition.character;
+            }
+        }
+
+        this._vimState.actionState = new ActionState(this._vimState);
 
         return !!action;
     }

@@ -10,6 +10,8 @@ import * as vscode from 'vscode';
 import { showCmdLine } from './src/cmd_line/main';
 import { ModeHandler } from './src/mode/modeHandler';
 import { TaskQueue } from './src/taskQueue';
+import { Mode, ModeName } from './src/mode/mode';
+import { Position } from './src/motion/position'
 
 let extensionContext: vscode.ExtensionContext;
 
@@ -56,7 +58,7 @@ export async function getAndUpdateModeHandler(): Promise<ModeHandler> {
 
 export function activate(context: vscode.ExtensionContext) {
     extensionContext = context;
-
+    
     registerCommand(context, 'type', async (args) => {
         if (!vscode.window.activeTextEditor) {
             return;
@@ -68,6 +70,20 @@ export function activate(context: vscode.ExtensionContext) {
             promise   : async () => { await mh.handleKeyEvent(args.text); },
             isRunning : false
         });
+    });
+
+    registerCommand(context, 'replacePreviousChar', async (args) => {
+        if (!vscode.window.activeTextEditor) {
+			return;
+		}
+
+        const mh = await getAndUpdateModeHandler();
+        console.log(args.text);
+
+        vscode.commands.executeCommand('default:replacePreviousChar', {
+			text: args.text,
+			replaceCharCnt: args.replaceCharCnt
+		});
     });
 
     registerCommand(context, 'extension.vim_esc', () => handleKeyEvent("<esc>"));

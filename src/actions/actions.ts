@@ -1401,9 +1401,17 @@ class CommandInsertNewLineBefore extends BaseCommand {
 class MoveLeft extends BaseMovement {
   modes = [ModeName.Normal, ModeName.Visual, ModeName.VisualLine];
   keys = ["h"];
+  cursorCommand = "cursorLeft";
+  cursorSelectCommand = "cursorLeftSelect";
 
   public async execAction(position: Position, vimState: VimState): Promise<Position> {
-    return position.getLeft();
+    if (vimState.currentMode === ModeName.Normal) {
+      await vscode.commands.executeCommand(this.cursorCommand);
+    } else {
+      await vscode.commands.executeCommand(this.cursorSelectCommand);
+    }
+
+    return Position.FromVSCodePosition(vscode.window.activeTextEditor.selection.active);
   }
 }
 
@@ -1414,14 +1422,10 @@ class MoveLeftArrow extends MoveLeft {
 }
 
 @RegisterAction
-class MoveUp extends BaseMovement {
-  modes = [ModeName.Normal, ModeName.Visual, ModeName.VisualLine];
+class MoveUp extends MoveLeft {
   keys = ["k"];
-  doesntChangeDesiredColumn = true;
-
-  public async execAction(position: Position, vimState: VimState): Promise<Position> {
-    return position.getUp(vimState.desiredColumn);
-  }
+  cursorCommand = "cursorUp";
+  cursorSelectCommand = "cursorUpSelect";
 }
 
 @RegisterAction
@@ -1431,14 +1435,10 @@ class MoveUpArrow extends MoveUp {
 }
 
 @RegisterAction
-class MoveDown extends BaseMovement {
-  modes = [ModeName.Normal, ModeName.Visual, ModeName.VisualLine];
+class MoveDown extends MoveLeft {
   keys = ["j"];
-  doesntChangeDesiredColumn = true;
-
-  public async execAction(position: Position, vimState: VimState): Promise<Position> {
-    return position.getDown(vimState.desiredColumn);
-  }
+  cursorCommand = "cursorDown";
+  cursorSelectCommand = "cursorDownSelect";
 }
 
 @RegisterAction
@@ -1448,13 +1448,10 @@ class MoveDownArrow extends MoveDown {
 }
 
 @RegisterAction
-class MoveRight extends BaseMovement {
-  modes = [ModeName.Normal, ModeName.Visual, ModeName.VisualLine];
+class MoveRight extends MoveLeft {
   keys = ["l"];
-
-  public async execAction(position: Position, vimState: VimState): Promise<Position> {
-    return new Position(position.line, position.character + 1);
-  }
+  cursorCommand = "cursorRight";
+  cursorSelectCommand = "cursorRightSelect";
 }
 
 @RegisterAction

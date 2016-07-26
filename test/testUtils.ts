@@ -51,8 +51,14 @@ export async function setupWorkspace(): Promise<any> {
 }
 
 export async function setupWorkspaceWithTestProject(): Promise<any> {
-  const testProjectFolder = join(__dirname, './test_project');
+  const testProjectFolder = vscode.Uri.file(join(__dirname, './test_project'));
   await vscode.commands.executeCommand("vscode.open", testProjectFolder);
+}
+
+export async function openFile(file: string): Promise<any> {
+  const filePath = join(__dirname, './test_project', file);
+  const doc  = await vscode.workspace.openTextDocument(filePath);
+  await vscode.window.showTextDocument(doc);
 }
 
 export async function cleanUpWorkspace(): Promise<any> {

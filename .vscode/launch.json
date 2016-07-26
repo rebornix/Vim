@@ -24,7 +24,6 @@
 			"stopOnEntry": false,
 			"sourceMaps": true,
 			"outDir": "${workspaceRoot}/out"
-			// "preLaunchTask": "npm"
 		}
 	]
 }

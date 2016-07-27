@@ -89,12 +89,12 @@ export class TabCommand extends node.CommandBase {
       case Tab.Move:
         if (this._arguments.count !== undefined) {
           if (this._arguments.count === 0) {
-            vscode.commands.executeCommand("activeEditorMove", { to: "first" });
+            vscode.commands.executeCommand("moveActiveEditor", { to: "first" });
           } else {
-            vscode.commands.executeCommand("activeEditorMove", { to: "position", amount: this._arguments.count });
+            vscode.commands.executeCommand("moveActiveEditor", { to: "position", value: this._arguments.count + 1 });
           }
         } else {
-          vscode.commands.executeCommand("activeEditorMove", { to: "last" });
+          vscode.commands.executeCommand("moveActiveEditor", { to: "last" });
         }
         break;
 

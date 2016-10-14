@@ -1,0 +1,1 @@
+import * as appInsights from 'applicationinsights';

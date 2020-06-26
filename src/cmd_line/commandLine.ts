@@ -53,12 +53,13 @@ class CommandLine {
 
   public async load(context: vscode.ExtensionContext): Promise<void> {
     this._history = new CommandLineHistory(context);
-    return this._history.load();
 
     if (ENV.node) {
       const m = await import('../neovim/neovim');
       this._nvim = new m.NeovimWrapper();
     }
+
+    return this._history.load();
   }
 
   public async Run(command: string, vimState: VimState): Promise<void> {
